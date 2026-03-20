@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getSites } from '../api';
+import { useAuth } from '../context/AuthContext';
 import type { Site } from '../types';
 
 export default function Home() {
+  const { user } = useAuth();
   const [stats, setStats] = useState({ sites: 0, routes: 0 });
 
   useEffect(() => {
@@ -96,9 +98,15 @@ export default function Home() {
             <Link to="/sites" className="btn btn-primary" style={{ fontSize: '1rem', padding: '14px 32px' }}>
               Explorer les sites
             </Link>
-            <Link to="/register" className="btn btn-secondary" style={{ fontSize: '1rem', padding: '14px 32px' }}>
-              Créer un compte
-            </Link>
+            {user ? (
+              <Link to="/logbook" className="btn btn-secondary" style={{ fontSize: '1rem', padding: '14px 32px' }}>
+                Mon carnet
+              </Link>
+            ) : (
+              <Link to="/register" className="btn btn-secondary" style={{ fontSize: '1rem', padding: '14px 32px' }}>
+                Créer un compte
+              </Link>
+            )}
           </div>
 
           {/* Stats */}
@@ -196,12 +204,30 @@ export default function Home() {
         <h2 style={{ fontSize: '2rem', fontWeight: 800, marginBottom: 16 }}>
           Prêt à grimper ?
         </h2>
-        <p style={{ color: 'var(--text-muted)', marginBottom: 32, fontSize: '1.05rem' }}>
-          Rejoignez la communauté VerticalLog et commencez à enregistrer vos ascensions.
-        </p>
-        <Link to="/register" className="btn btn-primary" style={{ fontSize: '1rem', padding: '14px 40px' }}>
-          Commencer gratuitement
-        </Link>
+        {user ? (
+          <>
+            <p style={{ color: 'var(--text-muted)', marginBottom: 32, fontSize: '1.05rem' }}>
+              Bienvenue, <strong>{user.username}</strong> ! Consultez votre carnet ou explorez les sites.
+            </p>
+            <div style={{ display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
+              <Link to="/logbook" className="btn btn-primary" style={{ fontSize: '1rem', padding: '14px 40px' }}>
+                Mon carnet
+              </Link>
+              <Link to="/profile" className="btn btn-secondary" style={{ fontSize: '1rem', padding: '14px 40px' }}>
+                Mon profil
+              </Link>
+            </div>
+          </>
+        ) : (
+          <>
+            <p style={{ color: 'var(--text-muted)', marginBottom: 32, fontSize: '1.05rem' }}>
+              Rejoignez la communauté VerticalLog et commencez à enregistrer vos ascensions.
+            </p>
+            <Link to="/register" className="btn btn-primary" style={{ fontSize: '1rem', padding: '14px 40px' }}>
+              Commencer gratuitement
+            </Link>
+          </>
+        )}
       </div>
     </div>
   );
