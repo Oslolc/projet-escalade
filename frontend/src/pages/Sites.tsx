@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getSites } from '../api';
+import { getSites, createSite, updateSite, deleteSite } from '../api';
+import { useAuth } from '../context/AuthContext';
 import type { Site } from '../types';
 
 const TYPE_COLORS: Record<string, string> = {
@@ -9,18 +10,91 @@ const TYPE_COLORS: Record<string, string> = {
   Salle: 'badge-salle',
 };
 
+const EMPTY_FORM = { name: '', type: 'Falaise' as Site['type'], location: '', description: '', image_url: '' };
+
 export default function Sites() {
+  const { user } = useAuth();
   const [sites, setSites] = useState<Site[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('');
 
+  // Modal state
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingSite, setEditingSite] = useState<Site | null>(null);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [formLoading, setFormLoading] = useState(false);
+  const [formError, setFormError] = useState('');
+
+  const canManage = user?.role === 'expert' || user?.role === 'admin';
+  const canDelete = user?.role === 'admin';
+
+  const loadSites = () => getSites().then((res) => setSites(res.data)).catch(console.error);
+
   useEffect(() => {
-    getSites()
-      .then((res) => setSites(res.data))
-      .catch(console.error)
-      .finally(() => setLoading(false));
+    loadSites().finally(() => setLoading(false));
   }, []);
+
+  const openCreate = () => {
+    setEditingSite(null);
+    setForm(EMPTY_FORM);
+    setFormError('');
+    setModalOpen(true);
+  };
+
+  const openEdit = (e: React.MouseEvent, site: Site) => {
+    e.preventDefault();
+    setEditingSite(site);
+    setForm({
+      name: site.name,
+      type: site.type,
+      location: site.location,
+      description: site.description || '',
+      image_url: site.image_url || '',
+    });
+    setFormError('');
+    setModalOpen(true);
+  };
+
+  const handleDelete = async (e: React.MouseEvent, site: Site) => {
+    e.preventDefault();
+    if (!confirm(`Supprimer "${site.name}" ?`)) return;
+    try {
+      await deleteSite(site.id);
+      setSites((prev) => prev.filter((s) => s.id !== site.id));
+    } catch {
+      alert('Erreur lors de la suppression');
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!form.name || !form.type || !form.location) {
+      setFormError('Nom, type et localisation sont requis.');
+      return;
+    }
+    setFormLoading(true);
+    setFormError('');
+    try {
+      const data = {
+        name: form.name,
+        type: form.type,
+        location: form.location,
+        description: form.description || undefined,
+        image_url: form.image_url || undefined,
+      };
+      if (editingSite) {
+        await updateSite(editingSite.id, data);
+      } else {
+        await createSite(data);
+      }
+      setModalOpen(false);
+      loadSites();
+    } catch {
+      setFormError('Une erreur est survenue.');
+    } finally {
+      setFormLoading(false);
+    }
+  };
 
   const filtered = sites.filter((s) => {
     const matchSearch =
@@ -33,9 +107,16 @@ export default function Sites() {
   return (
     <div className="page-container">
       {/* Header */}
-      <div className="page-header">
-        <h1>Sites d'escalade</h1>
-        <p>Découvrez les meilleurs spots de grimpe en France</p>
+      <div className="page-header" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+        <div>
+          <h1>Sites d'escalade</h1>
+          <p>Découvrez les meilleurs spots de grimpe en France</p>
+        </div>
+        {canManage && (
+          <button onClick={openCreate} className="btn btn-primary">
+            + Nouveau site
+          </button>
+        )}
       </div>
 
       {/* Filters */}
@@ -180,14 +261,77 @@ export default function Sites() {
                     <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                       {site.route_count} voie{Number(site.route_count) !== 1 ? 's' : ''}
                     </span>
-                    <span style={{ color: 'var(--accent)', fontSize: '0.85rem', fontWeight: 600 }}>
-                      Voir le topo →
-                    </span>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      {canManage && (
+                        <button
+                          onClick={(e) => openEdit(e, site)}
+                          className="btn btn-secondary btn-sm"
+                        >
+                          Modifier
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button
+                          onClick={(e) => handleDelete(e, site)}
+                          className="btn btn-sm"
+                          style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' }}
+                        >
+                          Supprimer
+                        </button>
+                      )}
+                      <span style={{ color: 'var(--accent)', fontSize: '0.85rem', fontWeight: 600 }}>
+                        Voir le topo →
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
             </Link>
           ))}
+        </div>
+      )}
+      {/* Create / Edit site modal */}
+      {modalOpen && (
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setModalOpen(false); }}>
+          <div className="modal">
+            <div className="modal-header">
+              <h2>{editingSite ? 'Modifier le site' : 'Nouveau site'}</h2>
+              <button className="modal-close" onClick={() => setModalOpen(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              {formError && <div className="alert alert-error" style={{ marginBottom: 16 }}>{formError}</div>}
+              <div className="form-group">
+                <label>Nom *</label>
+                <input className="form-control" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Gorges du Verdon" />
+              </div>
+              <div className="form-group">
+                <label>Type *</label>
+                <select className="form-control" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as Site['type'] })}>
+                  <option value="Falaise">Falaise</option>
+                  <option value="Bloc">Bloc</option>
+                  <option value="Salle">Salle</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Localisation *</label>
+                <input className="form-control" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="Alpes-de-Haute-Provence, France" />
+              </div>
+              <div className="form-group">
+                <label>Description</label>
+                <textarea className="form-control" rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} style={{ resize: 'vertical' }} />
+              </div>
+              <div className="form-group">
+                <label>URL de l'image</label>
+                <input className="form-control" value={form.image_url} onChange={(e) => setForm({ ...form, image_url: e.target.value })} placeholder="https://..." />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button onClick={() => setModalOpen(false)} className="btn btn-secondary">Annuler</button>
+              <button onClick={handleSubmit} className="btn btn-primary" disabled={formLoading}>
+                {formLoading ? 'Enregistrement...' : editingSite ? 'Mettre à jour' : 'Créer'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

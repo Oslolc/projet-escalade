@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getSite, addLogbookEntry } from '../api';
+import { getSite, addLogbookEntry, createRoute, updateRoute, deleteRoute } from '../api';
 import { useAuth } from '../context/AuthContext';
 import StarRating from '../components/StarRating';
 import type { Site, ClimbingRoute } from '../types';
+
+const EMPTY_ROUTE_FORM = { name: '', grade: '', style: '' as ClimbingRoute['style'] | '', description: '' };
 
 function getGradeColor(grade: string): { bg: string; color: string } {
   const num = parseFloat(grade.replace(/[abc+]/gi, ''));
@@ -28,6 +30,10 @@ export default function SiteDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  // Permissions
+  const canManage = user?.role === 'expert' || user?.role === 'admin';
+  const canDelete = user?.role === 'admin';
+
   // Logbook modal state
   const [addingRoute, setAddingRoute] = useState<ClimbingRoute | null>(null);
   const [logDate, setLogDate] = useState(new Date().toISOString().split('T')[0]);
@@ -36,6 +42,13 @@ export default function SiteDetail() {
   const [logLoading, setLogLoading] = useState(false);
   const [logSuccess, setLogSuccess] = useState('');
 
+  // Route modal state
+  const [routeModalOpen, setRouteModalOpen] = useState(false);
+  const [editingRoute, setEditingRoute] = useState<ClimbingRoute | null>(null);
+  const [routeForm, setRouteForm] = useState(EMPTY_ROUTE_FORM);
+  const [routeFormLoading, setRouteFormLoading] = useState(false);
+  const [routeFormError, setRouteFormError] = useState('');
+
   useEffect(() => {
     if (!id) return;
     getSite(Number(id))
@@ -43,6 +56,63 @@ export default function SiteDetail() {
       .catch(() => setError('Site introuvable'))
       .finally(() => setLoading(false));
   }, [id]);
+
+  const openCreateRoute = () => {
+    setEditingRoute(null);
+    setRouteForm(EMPTY_ROUTE_FORM);
+    setRouteFormError('');
+    setRouteModalOpen(true);
+  };
+
+  const openEditRoute = (route: ClimbingRoute) => {
+    setEditingRoute(route);
+    setRouteForm({ name: route.name, grade: route.grade, style: route.style || '', description: route.description || '' });
+    setRouteFormError('');
+    setRouteModalOpen(true);
+  };
+
+  const handleDeleteRoute = async (route: ClimbingRoute) => {
+    if (!confirm(`Supprimer "${route.name}" ?`)) return;
+    try {
+      await deleteRoute(route.id);
+      setSite((prev) => prev ? { ...prev, climbing_routes: prev.climbing_routes?.filter((r) => r.id !== route.id) } : prev);
+    } catch {
+      setError('Erreur lors de la suppression');
+    }
+  };
+
+  const handleRouteSubmit = async () => {
+    if (!routeForm.name || !routeForm.grade) {
+      setRouteFormError('Nom et cotation sont requis.');
+      return;
+    }
+    setRouteFormLoading(true);
+    setRouteFormError('');
+    try {
+      const data = {
+        site_id: site!.id,
+        name: routeForm.name,
+        grade: routeForm.grade,
+        style: routeForm.style || undefined,
+        description: routeForm.description || undefined,
+      };
+      if (editingRoute) {
+        const res = await updateRoute(editingRoute.id, data);
+        setSite((prev) => prev ? {
+          ...prev,
+          climbing_routes: prev.climbing_routes?.map((r) => r.id === editingRoute.id ? res.data : r),
+        } : prev);
+      } else {
+        const res = await createRoute(data);
+        setSite((prev) => prev ? { ...prev, climbing_routes: [...(prev.climbing_routes || []), res.data] } : prev);
+      }
+      setRouteModalOpen(false);
+    } catch {
+      setRouteFormError('Une erreur est survenue.');
+    } finally {
+      setRouteFormLoading(false);
+    }
+  };
 
   const handleAddToLogbook = async () => {
     if (!addingRoute) return;
@@ -165,15 +235,15 @@ export default function SiteDetail() {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
             <h2 style={{ fontSize: '1.3rem', fontWeight: 700 }}>
               Voies & Blocs
-              <span style={{
-                marginLeft: 10,
-                fontSize: '0.85rem',
-                color: 'var(--text-muted)',
-                fontWeight: 400,
-              }}>
+              <span style={{ marginLeft: 10, fontSize: '0.85rem', color: 'var(--text-muted)', fontWeight: 400 }}>
                 ({site.climbing_routes?.length || 0})
               </span>
             </h2>
+            {canManage && (
+              <button onClick={openCreateRoute} className="btn btn-primary btn-sm">
+                + Ajouter une voie
+              </button>
+            )}
           </div>
 
           {!site.climbing_routes?.length ? (
@@ -191,7 +261,7 @@ export default function SiteDetail() {
                     <th>Cotation</th>
                     <th>Style</th>
                     <th>Description</th>
-                    {user && <th>Action</th>}
+                    {(user || canManage) && <th>Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -223,14 +293,29 @@ export default function SiteDetail() {
                         }}>
                           {route.description || '—'}
                         </td>
-                        {user && (
+                        {(user || canManage) && (
                           <td>
-                            <button
-                              onClick={() => setAddingRoute(route)}
-                              className="btn btn-primary btn-sm"
-                            >
-                              + Carnet
-                            </button>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              {user && (
+                                <button onClick={() => setAddingRoute(route)} className="btn btn-primary btn-sm">
+                                  + Carnet
+                                </button>
+                              )}
+                              {canManage && (
+                                <button onClick={() => openEditRoute(route)} className="btn btn-secondary btn-sm">
+                                  Modifier
+                                </button>
+                              )}
+                              {canDelete && (
+                                <button
+                                  onClick={() => handleDeleteRoute(route)}
+                                  className="btn btn-sm"
+                                  style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' }}
+                                >
+                                  Supprimer
+                                </button>
+                              )}
+                            </div>
                           </td>
                         )}
                       </tr>
@@ -257,6 +342,48 @@ export default function SiteDetail() {
           </div>
         )}
       </div>
+
+      {/* Create / Edit route modal */}
+      {routeModalOpen && (
+        <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setRouteModalOpen(false); }}>
+          <div className="modal">
+            <div className="modal-header">
+              <h2>{editingRoute ? 'Modifier la voie' : 'Ajouter une voie'}</h2>
+              <button className="modal-close" onClick={() => setRouteModalOpen(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              {routeFormError && <div className="alert alert-error" style={{ marginBottom: 16 }}>{routeFormError}</div>}
+              <div className="form-group">
+                <label>Nom *</label>
+                <input className="form-control" value={routeForm.name} onChange={(e) => setRouteForm({ ...routeForm, name: e.target.value })} placeholder="La Grande Voie" />
+              </div>
+              <div className="form-group">
+                <label>Cotation *</label>
+                <input className="form-control" value={routeForm.grade} onChange={(e) => setRouteForm({ ...routeForm, grade: e.target.value })} placeholder="6b+" />
+              </div>
+              <div className="form-group">
+                <label>Style</label>
+                <select className="form-control" value={routeForm.style ?? ''} onChange={(e) => setRouteForm({ ...routeForm, style: e.target.value as ClimbingRoute['style'] | '' })}>
+                  <option value="">— Non précisé</option>
+                  <option value="Voie">Voie</option>
+                  <option value="Boulder">Boulder</option>
+                  <option value="Trad">Trad</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Description</label>
+                <textarea className="form-control" rows={3} value={routeForm.description} onChange={(e) => setRouteForm({ ...routeForm, description: e.target.value })} style={{ resize: 'vertical' }} />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button onClick={() => setRouteModalOpen(false)} className="btn btn-secondary">Annuler</button>
+              <button onClick={handleRouteSubmit} className="btn btn-primary" disabled={routeFormLoading}>
+                {routeFormLoading ? 'Enregistrement...' : editingRoute ? 'Mettre à jour' : 'Ajouter'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add to logbook modal */}
       {addingRoute && (
