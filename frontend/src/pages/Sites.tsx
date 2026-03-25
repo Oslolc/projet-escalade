@@ -21,7 +21,7 @@ const TYPE_COLORS: Record<string, string> = {
   Salle: 'badge-salle',
 };
 
-const EMPTY_FORM = { name: '', type: 'Falaise' as Site['type'], location: '', description: '', image_url: '' };
+const EMPTY_FORM = { name: '', type: 'Falaise' as Site['type'], location: '', description: '', image_url: '', latitude: '', longitude: '' };
 
 export default function Sites() {
   const { user } = useAuth();
@@ -63,6 +63,8 @@ export default function Sites() {
       location: site.location,
       description: site.description || '',
       image_url: site.image_url || '',
+      latitude: site.latitude?.toString() || '',
+      longitude: site.longitude?.toString() || '',
     });
     setFormError('');
     setModalOpen(true);
@@ -93,6 +95,8 @@ export default function Sites() {
         location: form.location,
         description: form.description || undefined,
         image_url: form.image_url || undefined,
+        latitude: form.latitude ? parseFloat(form.latitude) : undefined,
+        longitude: form.longitude ? parseFloat(form.longitude) : undefined,
       };
       if (editingSite) {
         await updateSite(editingSite.id, data);
@@ -387,6 +391,16 @@ export default function Sites() {
               <div className="form-group">
                 <label>URL de l'image</label>
                 <input className="form-control" value={form.image_url} onChange={(e) => setForm({ ...form, image_url: e.target.value })} placeholder="https://..." />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Latitude</label>
+                  <input className="form-control" value={form.latitude} onChange={(e) => setForm({ ...form, latitude: e.target.value })} placeholder="48.8566" type="number" step="any" />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label>Longitude</label>
+                  <input className="form-control" value={form.longitude} onChange={(e) => setForm({ ...form, longitude: e.target.value })} placeholder="2.3522" type="number" step="any" />
+                </div>
               </div>
             </div>
             <div className="modal-footer">
